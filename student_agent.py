@@ -36,7 +36,6 @@ def get_action(obs, debug=False):
       4 = Pick Up
       5 = Drop Off
     """
-    # Epsilon is not used in evaluation—always pick the best known action from Q-table.
     q_table = load_q_table()
     q_values = get_q_values(obs, q_table)
     max_q_value = np.max(q_values)

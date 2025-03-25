@@ -38,7 +38,7 @@ class SimpleTaxiEnv:
       5 = Dropoff
     """
 
-    def __init__(self, grid_size=5, fuel_limit=50):
+    def __init__(self, grid_size, fuel_limit):
         """
         :param grid_size: Size of the square grid (e.g., 5x5).
         :param fuel_limit: Max steps before environment ends automatically.
