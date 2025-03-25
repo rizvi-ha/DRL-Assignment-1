@@ -61,7 +61,7 @@ class QLearningAgent:
         state = self.extract_state(obs, passenger_on)
 
         if state not in self.q_table:
-            self.q_table[state] = np.array([0, 0, 0, 0 ,-1, -1], dtype=np.float32)
+            self.q_table[state] = np.array([0, 0, 0, 0 ,-1.5, -1.5], dtype=np.float32)
 
         return self.q_table[state]
 
@@ -268,11 +268,11 @@ def train_agent(
 
 if __name__ == "__main__":
     train_agent(
-        episodes=60000,
+        episodes=140000,
         max_steps=200,
         alpha=0.1,
         gamma=0.99,
         epsilon=1.0,
         epsilon_min=0.05,
-        decay=0.99997
+        decay=0.99998
     )
