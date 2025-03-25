@@ -269,6 +269,7 @@ def run_agent(agent_file, env_config=None, render=False):
 
         if render:
             env.render_env(action=action, step=step_count)
+            time.sleep(0.02)
 
     print(f"Episode finished in {step_count} steps with total reward = {total_reward:.2f}")
     return total_reward
@@ -277,5 +278,5 @@ def run_agent(agent_file, env_config=None, render=False):
 # we can do a quick test with a random agent from student_agent.py
 if __name__ == "__main__":
     # Example usage:
-    final_score = run_agent("student_agent.py", env_config={"grid_size":8, "fuel_limit":2000}, render=True)
+    final_score = run_agent("student_agent.py", env_config={"grid_size":8, "fuel_limit":200}, render=True)
     print("Final Score from run_agent:", final_score)

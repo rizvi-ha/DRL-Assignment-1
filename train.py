@@ -24,7 +24,7 @@ class QLearningAgent:
         self.epsilon_min = epsilon_min
         self.decay = decay
         
-        # Q-table stored as a dictionary of obs -> Q-value array of shape (6,)
+        # Q-table stored as a dictionary: obs -> np.array of shape (6,) for Q-values
         self.q_table = {}
 
     def get_q_values(self, obs):
@@ -47,6 +47,7 @@ class QLearningAgent:
         else:
             q_values = self.get_q_values(obs)
             max_q_value = np.max(q_values)
+            # Collect all actions whose Q-value == max_q_value so we can pick randomly among ties
             best_actions = [a for a, q in enumerate(q_values) if q == max_q_value]
             return random.choice(best_actions)
 
@@ -58,7 +59,7 @@ class QLearningAgent:
         next_q = self.get_q_values(next_obs)
         
         if done:
-            td_target = reward  # no future reward if episode ends
+            td_target = reward
         else:
             td_target = reward + self.gamma * np.max(next_q)
         
@@ -78,6 +79,7 @@ class QLearningAgent:
         with open(filename, 'wb') as f:
             pickle.dump(self.q_table, f)
 
+
 def train_agent(
     episodes=5000,
     max_steps=500,
@@ -85,57 +87,175 @@ def train_agent(
     gamma=0.99,
     epsilon=1.0,
     epsilon_min=0.05,
-    decay=0.9995
+    decay=0.9999
 ):
     """
-    Train a Q-learning taxi agent in SimpleTaxiEnv.
-    The environment is random each episode to encourage generalization.
+    Train a Q-learning taxi agent in SimpleTaxiEnv with reward shaping 
+    (inspired by your attached snippet).
     """
-    # You may alter the grid_size and fuel_limit to approximate the real environment more closely.
-    # lets have grid size be random between 5 and 10
     agent = QLearningAgent(alpha, gamma, epsilon, epsilon_min, decay)
     all_rewards = []
 
     for ep in range(episodes):
+        # Random grid size from 5 to 10 (as you do)
         grid_size = random.randint(5, 10)
-        env = SimpleTaxiEnv(grid_size=grid_size, fuel_limit=2000)
+        env = SimpleTaxiEnv(grid_size=grid_size, fuel_limit=200)
+
         obs, _ = env.reset()
         total_reward = 0.0
         done = False
 
-        for step in range(max_steps):
-            action = agent.choose_action(obs)
-            next_obs, reward, done, _ = env.step(action)
+        # =========================
+        # Variables for shaping
+        # =========================
+        passenger_in_taxi = False
+        visited_stations = set() 
+        visited_passenger_station = False
+        visited_dropoff_station = False
+        previous_taxi_pos = (obs[0], obs[1])  # (row, col)
+        previous_action = None
 
-            agent.update(obs, action, reward, next_obs, done)
+        for step in range(max_steps):
+            # 1) Choose action from Q-table (epsilon-greedy)
+            action = agent.choose_action(obs)
+
+            # 2) Environment step
+            next_obs, base_reward, done, _ = env.step(action)
+            
+            # 3) Add the snippet’s shaping
+            shaping_reward = 0.0
+
+            # Current taxi pos & next taxi pos
+            taxi_row, taxi_col = obs[0], obs[1]
+            next_taxi_row, next_taxi_col = next_obs[0], next_obs[1]
+
+            # Stations:
+            station_positions = [
+                (obs[2],  obs[3]),
+                (obs[4],  obs[5]),
+                (obs[6],  obs[7]),
+                (obs[8],  obs[9])
+            ]
+            # Booleans for obstacles, passenger_look, drop_look
+            obstacle_north, obstacle_south, obstacle_east, obstacle_west = obs[10], obs[11], obs[12], obs[13]
+            passenger_look, drop_look = obs[14], obs[15]
+
+            # --------------------------------------------------
+            #  (A) Movement shaping
+            # --------------------------------------------------
+            # If we do a movement action
+            if action in [0, 1, 2, 3]:
+                # If the next position == old position, then agent tried to move but failed
+                # or moved out of bounds/ into obstacle
+                if (next_taxi_row, next_taxi_col) == (taxi_row, taxi_col):
+                    # We can penalize it for "wasted move"
+                    shaping_reward -= 1.0
+                else:
+                    # Possibly reward small forward motion, or penalize turning, etc. (the snippet does that)
+                    # We check if previous_action was also in the same dimension of movement
+                    if previous_action in [0, 1] and action in [0, 1]:
+                        shaping_reward += 0.2
+                    elif previous_action in [2, 3] and action in [2, 3]:
+                        shaping_reward += 0.2
+                    else:
+                        shaping_reward -= 0.05
+
+                    # If the agent “backtracked” immediately:
+                    if (next_taxi_row, next_taxi_col) == previous_taxi_pos:
+                        shaping_reward -= 0.4
+
+            # --------------------------------------------------
+            #  (B) Pickup action (4)
+            # --------------------------------------------------
+            if action == 4:
+                # If not carrying passenger yet, and the agent is actually at a station w/ passenger_look
+                # => success
+                if (not passenger_in_taxi) and (taxi_row, taxi_col) in station_positions and passenger_look:
+                    shaping_reward += 30
+                    passenger_in_taxi = True
+                else:
+                    # check the snippet logic
+                    if (taxi_row, taxi_col) not in station_positions:
+                        shaping_reward -= 1
+                    elif passenger_in_taxi:
+                        shaping_reward -= 2
+                    else:
+                        shaping_reward -= 3
+
+            # --------------------------------------------------
+            #  (C) Dropoff action (5)
+            # --------------------------------------------------
+            if action == 5:
+                # If we are carrying passenger, next station has drop_look => success
+                if passenger_in_taxi and (taxi_row, taxi_col) in station_positions and drop_look:
+                    shaping_reward += 100
+                    passenger_in_taxi = False
+                else:
+                    if (taxi_row, taxi_col) not in station_positions:
+                        shaping_reward -= 2
+                    elif not passenger_in_taxi:
+                        shaping_reward -= 3
+                    else:
+                        shaping_reward -= 5
+
+            # --------------------------------------------------
+            #  (D) Visiting station shaping
+            # --------------------------------------------------
+            if (taxi_row, taxi_col) in station_positions:
+                # If passenger_look & not visited_passenger_station => +5
+                if passenger_look and not visited_passenger_station:
+                    shaping_reward += 5
+                    visited_passenger_station = True
+                # If drop_look & not visited_dropoff_station => +10
+                if drop_look and not visited_dropoff_station:
+                    shaping_reward += 10
+                    visited_dropoff_station = True
+
+                # If this station is newly visited => +5
+                if (taxi_row, taxi_col) not in visited_stations:
+                    visited_stations.add((taxi_row, taxi_col))
+                    shaping_reward += 5
+                else:
+                    # Station re-visited => -0.5
+                    shaping_reward -= 0.5
+
+            # Summation of base env reward + shaping
+            total_step_reward = base_reward + shaping_reward
+
+            # 4) Q-learning update
+            agent.update(obs, action, total_step_reward, next_obs, done)
+
+            # 5) Bookkeeping
+            total_reward += total_step_reward
             obs = next_obs
-            total_reward += reward
+            previous_taxi_pos = (next_taxi_row, next_taxi_col)
+            previous_action = action
 
             if done:
                 break
-        
-        # Decay epsilon after each episode
-        agent.decay_epsilon()
-        all_rewards.append(total_reward)
 
-        # Print progress every 500 episodes (optional)
+        agent.decay_epsilon()
+        all_rewards.append(base_reward)
+
         if (ep + 1) % 500 == 0:
             avg_reward = np.mean(all_rewards[-500:])
-            print(f"Episode {ep+1}/{episodes} - Avg Reward (last 500 eps): {avg_reward:.2f} - Epsilon: {agent.epsilon:.3f}")
+            print(f"Episode {ep+1}/{episodes} - Avg Reward (last 500 eps): {avg_reward:.2f}"
+                  f" - Epsilon: {agent.epsilon:.3f}")
 
-    # Save the trained Q-table
+    # Save final Q-table
     agent.save('q_table.pkl')
     print("Training complete. Q-table saved as q_table.pkl.")
     return agent
 
+
 if __name__ == "__main__":
     # Example usage: adjust episodes and other hyperparams as needed
     trained_agent = train_agent(
-        episodes=10000,
-        max_steps=2000,
+        episodes=90000,
+        max_steps=200,
         alpha=0.1,
         gamma=0.99,
         epsilon=1.0,
         epsilon_min=0.05,
-        decay=0.9995
+        decay=0.99999
     )
