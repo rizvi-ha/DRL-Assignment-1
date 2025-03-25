@@ -92,7 +92,9 @@ def train_agent(
     The environment is random each episode to encourage generalization.
     """
     # You may alter the grid_size and fuel_limit to approximate the real environment more closely.
-    env = SimpleTaxiEnv(grid_size=8, fuel_limit=2000)  
+    # lets have grid size be random between 5 and 10
+    grid_size = random.randint(5, 10)
+    env = SimpleTaxiEnv(grid_size=grid_size, fuel_limit=2000)  
     agent = QLearningAgent(alpha, gamma, epsilon, epsilon_min, decay)
 
     all_rewards = []
