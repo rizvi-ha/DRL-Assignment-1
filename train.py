@@ -151,12 +151,15 @@ def train_agent(
                     # We can penalize it for "wasted move"
                     shaping_reward -= 1.0
                 else:
-                    # Possibly reward small forward motion, or penalize turning, etc. (the snippet does that)
-                    # We check if previous_action was also in the same dimension of movement
-                    if previous_action in [0, 1] and action in [0, 1]:
-                        shaping_reward += 0.2
-                    elif previous_action in [2, 3] and action in [2, 3]:
-                        shaping_reward += 0.2
+                    # Prevent flip flopping back and forth 
+                    if previous_action == 0 and action == 1:
+                        shaping_reward -= 0.5
+                    elif previous_action == 1 and action == 0:
+                        shaping_reward -= 0.5
+                    elif previous_action == 2 and action == 3:
+                        shaping_reward -= 0.5
+                    elif previous_action == 2 and action == 3:
+                        shaping_reward -= 0.5
                     else:
                         shaping_reward -= 0.05
 
@@ -251,7 +254,7 @@ def train_agent(
 if __name__ == "__main__":
     # Example usage: adjust episodes and other hyperparams as needed
     trained_agent = train_agent(
-        episodes=90000,
+        episodes=150000,
         max_steps=200,
         alpha=0.1,
         gamma=0.99,
