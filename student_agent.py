@@ -18,7 +18,7 @@ def get_q_values(obs, q_table):
     This is crucial when facing new states in dynamic environments.
     """
     if obs not in q_table:
-        q_table[obs] = [0.1, 0.1, 0.1, 0.1, -1, -1]
+        q_table[obs] = [0.1, 0.1, 0.1, 0.1, -5, -5]
     return q_table[obs]
 
 def get_action(obs, debug=False):

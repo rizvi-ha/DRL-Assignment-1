@@ -33,7 +33,7 @@ class QLearningAgent:
         If obs not found, initialize with zeros.
         """
         if obs not in self.q_table:
-            self.q_table[obs] = np.zeros(6, dtype=np.float32)
+            self.q_table[obs] = [0.1, 0.1, 0.1, 0.1, -5, -5]
         return self.q_table[obs]
 
     def choose_action(self, obs):
@@ -238,7 +238,7 @@ def train_agent(
                 break
 
         agent.decay_epsilon()
-        all_rewards.append(base_reward)
+        all_rewards.append(total_step_reward)
 
         if (ep + 1) % 500 == 0:
             avg_reward = np.mean(all_rewards[-500:])
@@ -254,11 +254,11 @@ def train_agent(
 if __name__ == "__main__":
     # Example usage: adjust episodes and other hyperparams as needed
     trained_agent = train_agent(
-        episodes=150000,
+        episodes=60000,
         max_steps=200,
-        alpha=0.1,
+        alpha=0.2,
         gamma=0.99,
         epsilon=1.0,
         epsilon_min=0.05,
-        decay=0.99999
+        decay=0.99997
     )
