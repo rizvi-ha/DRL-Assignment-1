@@ -256,7 +256,7 @@ if __name__ == "__main__":
     trained_agent = train_agent(
         episodes=60000,
         max_steps=200,
-        alpha=0.2,
+        alpha=0.075,
         gamma=0.99,
         epsilon=1.0,
         epsilon_min=0.05,
