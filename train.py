@@ -7,78 +7,93 @@ from simple_custom_taxi_env import SimpleTaxiEnv
 class QLearningAgent:
     """
     A simple Q-learning agent that stores its Q-table in a Python dictionary.
-    The key for each entry in the Q-table is the environment's 'obs' tuple,
-    and the value is a length-6 array corresponding to the 6 possible actions.
+    We now use a custom 'extract_state(obs, passenger_on)' to define the dictionary key.
     """
     def __init__(self, alpha=0.1, gamma=0.99, epsilon=1.0, epsilon_min=0.05, decay=0.9995):
-        """
-        alpha: learning rate
-        gamma: discount factor
-        epsilon: initial epsilon for epsilon-greedy
-        epsilon_min: minimum possible epsilon value
-        decay: decay rate applied to epsilon after each episode
-        """
         self.alpha = alpha
         self.gamma = gamma
         self.epsilon = epsilon
         self.epsilon_min = epsilon_min
         self.decay = decay
         
-        # Q-table stored as a dictionary: obs -> np.array of shape (6,) for Q-values
+        # The Q-table: state -> array of shape (6,). 
+        # 'state' is the 6-tuple described below, not the raw obs.
         self.q_table = {}
 
-    def get_q_values(self, obs):
+    def extract_state(self, obs, passenger_on):
         """
-        Return the Q-values for the given obs.
-        If obs not found, initialize with zeros.
-        """
-        if obs not in self.q_table:
-            self.q_table[obs] = [0.1, 0.1, 0.1, 0.1, -5, -5]
-        return self.q_table[obs]
+        Convert obs + passenger_on into a smaller state representation:
+          (dir, passenger_on, wall_down, wall_up, wall_right, wall_left)
 
-    def choose_action(self, obs):
+        Where:
+          - dir is the direction of our 'goal' relative to (taxi_row, taxi_col).
+            We must decide how to pick the "goal": passenger if not onboard, or destination if passenger_on == True.
+          - passenger_on is 0 or 1
+          - wall_down, wall_up, wall_right, wall_left are booleans or 0/1 from obstacle info.
         """
-        Choose an action using epsilon-greedy. 
-        With probability epsilon, pick a random action (0~5).
-        Otherwise, pick the best action from the Q-table.
+        taxi_row, taxi_col = obs[0], obs[1]
+
+        obstacle_north = obs[10]
+        obstacle_south = obs[11]
+        obstacle_east  = obs[12]
+        obstacle_west  = obs[13]
+
+        passenger_look = obs[14]
+        destination_look = obs[15]
+
+        # Convert passenger_on to int
+        pass_on_int = 1 if passenger_on else 0
+
+        # Walls
+        # "wall_down" means obstacle or boundary if we move down => that's obs[11]
+        wall_down = 1 if obstacle_south else 0
+        wall_up = 1 if obstacle_north else 0
+        wall_right = 1 if obstacle_east else 0
+        wall_left = 1 if obstacle_west else 0
+
+        return (taxi_row, taxi_col, pass_on_int, wall_down, wall_up, wall_right, wall_left, passenger_look, destination_look)
+
+    def get_q_values(self, obs, passenger_on):
         """
+        We'll pass passenger_on into this function from the training loop,
+        so we can build the correct state key for Q-table lookups.
+        """
+        state = self.extract_state(obs, passenger_on)
+
+        if state not in self.q_table:
+            self.q_table[state] = np.array([0, 0, 0, 0 ,-1, -1], dtype=np.float32)
+
+        return self.q_table[state]
+
+    def choose_action(self, obs, passenger_on):
+        """
+        Choose an action using epsilon-greedy. We'll always get Q-values from our new get_q_values(...).
+        """
+        q_values = self.get_q_values(obs, passenger_on)
+
         if random.random() < self.epsilon:
-            return random.randint(0, 5)
+            return random.randint(0, 5)  # random action
         else:
-            q_values = self.get_q_values(obs)
-            max_q_value = np.max(q_values)
-            # Collect all actions whose Q-value == max_q_value so we can pick randomly among ties
-            best_actions = [a for a, q in enumerate(q_values) if q == max_q_value]
+            max_q = np.max(q_values)
+            best_actions = [a for a, val in enumerate(q_values) if val == max_q]
             return random.choice(best_actions)
 
-    def update(self, obs, action, reward, next_obs, done):
+    def update(self, obs, passenger_on, action, reward, next_obs, passenger_on_next, done):
         """
-        Update the Q-table using the standard Q-learning update rule.
+        Standard Q-learning update, but we must use the 'extract_state' for both current and next states.
         """
-        current_q = self.get_q_values(obs)
-        next_q = self.get_q_values(next_obs)
-        
-        if done:
-            td_target = reward
-        else:
-            td_target = reward + self.gamma * np.max(next_q)
-        
-        # Q-learning update
+        current_q = self.get_q_values(obs, passenger_on)
+        next_q = self.get_q_values(next_obs, passenger_on_next)
+
+        td_target = reward if done else (reward + self.gamma * np.max(next_q))
         current_q[action] += self.alpha * (td_target - current_q[action])
 
     def decay_epsilon(self):
-        """
-        Decay epsilon after each episode, ensuring it does not go below epsilon_min.
-        """
         self.epsilon = max(self.epsilon * self.decay, self.epsilon_min)
 
     def save(self, filename='q_table.pkl'):
-        """
-        Save the Q-table to file using pickle.
-        """
         with open(filename, 'wb') as f:
             pickle.dump(self.q_table, f)
-
 
 def train_agent(
     episodes=5000,
@@ -91,7 +106,6 @@ def train_agent(
 ):
     """
     Train a Q-learning taxi agent in SimpleTaxiEnv with reward shaping 
-    (inspired by your attached snippet).
     """
     agent = QLearningAgent(alpha, gamma, epsilon, epsilon_min, decay)
     all_rewards = []
@@ -117,7 +131,7 @@ def train_agent(
 
         for step in range(max_steps):
             # 1) Choose action from Q-table (epsilon-greedy)
-            action = agent.choose_action(obs)
+            action = agent.choose_action(obs, passenger_in_taxi)
 
             # 2) Environment step
             next_obs, base_reward, done, _ = env.step(action)
@@ -139,6 +153,7 @@ def train_agent(
             # Booleans for obstacles, passenger_look, drop_look
             obstacle_north, obstacle_south, obstacle_east, obstacle_west = obs[10], obs[11], obs[12], obs[13]
             passenger_look, drop_look = obs[14], obs[15]
+            passenger_in_taxi_old = passenger_in_taxi
 
             # --------------------------------------------------
             #  (A) Movement shaping
@@ -226,7 +241,7 @@ def train_agent(
             total_step_reward = base_reward + shaping_reward
 
             # 4) Q-learning update
-            agent.update(obs, action, total_step_reward, next_obs, done)
+            agent.update(obs, passenger_in_taxi_old, action, total_step_reward, next_obs, passenger_in_taxi, done)
 
             # 5) Bookkeeping
             total_reward += total_step_reward
@@ -238,7 +253,7 @@ def train_agent(
                 break
 
         agent.decay_epsilon()
-        all_rewards.append(total_step_reward)
+        all_rewards.append(base_reward)
 
         if (ep + 1) % 500 == 0:
             avg_reward = np.mean(all_rewards[-500:])
@@ -252,11 +267,10 @@ def train_agent(
 
 
 if __name__ == "__main__":
-    # Example usage: adjust episodes and other hyperparams as needed
-    trained_agent = train_agent(
+    train_agent(
         episodes=60000,
         max_steps=200,
-        alpha=0.075,
+        alpha=0.1,
         gamma=0.99,
         epsilon=1.0,
         epsilon_min=0.05,
